@@ -1,0 +1,32 @@
+[project]
+name = "ramgate"
+version = "0.1.0"
+description = "One gate for every local model on a shared-memory Mac: queue by RAM budget, inject MLX/MPS limits, stop the newest task before the kernel kills everything."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Lostin" }]
+keywords = ["apple-silicon", "mlx", "pytorch", "mps", "memory", "scheduler", "claude-code", "local-llm"]
+classifiers = [
+  "Environment :: Console",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Monitoring",
+]
+dependencies = []
+
+[project.scripts]
+ramgate = "ramgate.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Carlknowsnothing/ramgate"
+
+[build-system]
+requires = ["uv_build>=0.8,<1"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[dependency-groups]
+dev = ["pytest>=8"]

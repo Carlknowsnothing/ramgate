@@ -1,0 +1,51 @@
+# Built-in profiles. Each has a memory budget (GiB), environment variables injected when the caller
+# has not set them, `match` substrings the Claude Code hook uses to spot a direct model launch, and a note.
+# Add or override entries in ~/.config/ramgate/profiles.toml (`ramgate init` writes a template).
+# After a run, `ramgate history` records the sustained peak footprint; budgets use max(profile, 1.1 × recent peak).
+
+[ace-step]
+mem_gib = 28
+env = { ACE_SPLIT_LM = "1", ACE_MLX_CACHE_GIB = "2" }
+match = ["acestep", "ace-step", "ace_step"]
+note = "ACE-Step 1.5 (MLX). XL + 4B planner: ~45 GiB sustained footprint on a 64 GiB M5 Pro; 2B ~21"
+
+[comfyui]
+mem_gib = 24
+resident = true
+env = { PYTORCH_MPS_HIGH_WATERMARK_RATIO = "1.0" }
+match = ["ComfyUI", "comfyui"]
+note = "ComfyUI server (PyTorch MPS); depends entirely on the workflow"
+
+[ltx]
+mem_gib = 20
+env = { PYTORCH_MPS_HIGH_WATERMARK_RATIO = "1.0" }
+match = ["ltx-2", "ltx_video", "ltxv", "ltx2"]
+note = "LTX-2.x video: 18 GiB measured at 512x512x49 frames, q8, low-RAM mode"
+
+[mlx-lm]
+mem_gib = 8
+match = ["mlx_lm", "mlx-lm"]
+note = "mlx-lm text generation; 8 GiB covers 7B at 4-bit, raise for bigger models"
+
+[whisper]
+mem_gib = 4
+match = ["mlx_whisper", "mlx-whisper", "whisper-cli", "whisper.cpp", "faster_whisper", "faster-whisper"]
+note = "Speech-to-text; large-v3 ~3 GiB"
+
+[tts]
+mem_gib = 15
+match = ["mlx_audio", "mlx-audio", "qwen_tts", "qwen3_tts"]
+note = "Qwen3-TTS via mlx-audio measured 14.2 GiB"
+
+[separate]
+mem_gib = 6
+match = ["demucs", "audio_separator", "audio-separator", "spleeter"]
+note = "Stem separation"
+
+[hog]
+match = []
+note = "For load tests; requires --mem"
+
+[adhoc]
+match = []
+note = "Escape hatch when the hook misfires; requires --mem"
