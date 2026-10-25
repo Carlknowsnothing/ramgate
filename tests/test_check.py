@@ -35,3 +35,8 @@ def test_user_profiles_are_matched_before_builtins(home):
     (home / 'config' / 'profiles.toml').write_text('[mine]\nmem_gib = 1\nmatch = ["acestep-fork/.venv"]\n')
     r = rg('check', '/x/acestep-fork/.venv/bin/python go.py')
     assert r.returncode == 2 and '--profile mine' in r.stdout
+
+
+def test_check_ignores_commands_that_merely_mention_a_model(builtins_only):
+    assert rg('check', 'grep -n "ComfyUI\\|acestep\\|ltx-2.5" work/comfy.log | tail').returncode == 0
+    assert rg('check', 'ls models/ltx-2.5-q8').returncode == 0

@@ -35,20 +35,25 @@ def admit(need_gib, committed_gib, total_gib, free_gib, swap_rising, cfg, unreal
     return True, ''
 
 
-def redline(free_pct, swap_rise_gib, cfg, swap_rise_recent_gib=None, critical_seconds=0.0, seconds_since_kill=float('inf')):
+def redline(free_pct, swap_rise_gib, cfg, swap_rise_recent_gib=None, critical_seconds=0.0, seconds_since_kill=float('inf'), over_budget=False):
     """Returns the reason when a red line is crossed, else None.
 
     Three lines: kernel pressure "critical" sustained for a few seconds (loading XL weights flashes critical
     for ~1 s and recovers — a single sample must not kill); free memory too low; swap growth over the window
     above the limit *and* still rising *and* no kill in the last minute (after a kill the window still shows
-    the growth, so without cooldown the next-youngest task dies too). macOS keeps "free" looking healthy by
-    swapping other processes out, so on Apple Silicon the swap line is the one that actually fires."""
+    the growth, so without cooldown the next-youngest task dies too) *and* either this task is over its own
+    budget or free memory is already low. macOS keeps "free" looking healthy by swapping other processes out,
+    so on Apple Silicon the swap line is the one that actually fires — but a server loading 30 GiB of weights
+    within its budget also pushes a few GiB of idle app pages to swap, and that must not count as a runaway
+    (2026-10-25: a ComfyUI was killed 40 s after start that way)."""
     if critical_seconds >= cfg.redline_pressure_seconds:
         return f'kernel memory pressure critical for {critical_seconds:.0f} s'
     if free_pct < cfg.redline_free_pct:
         return f'free memory {free_pct:.0f}% < {cfg.redline_free_pct:.0f}%'
     still_rising = swap_rise_recent_gib is None or swap_rise_recent_gib > 0.05
     cooling = seconds_since_kill < cfg.kill_cooldown_seconds
-    if swap_rise_gib > cfg.redline_swap_rise_gib and still_rising and not cooling and free_pct < cfg.redline_swap_free_pct:
-        return f'swap grew {swap_rise_gib:.1f} GiB in {cfg.redline_window_seconds:.0f} s and is still rising (free {free_pct:.0f}%)'
+    culpable = over_budget or free_pct < cfg.redline_swap_free_pct
+    if swap_rise_gib > cfg.redline_swap_rise_gib and still_rising and not cooling and culpable:
+        return (f'swap grew {swap_rise_gib:.1f} GiB in {cfg.redline_window_seconds:.0f} s and is still rising '
+                f'({"over its budget" if over_budget else f"free {free_pct:.0f}%"})')
     return None

@@ -33,7 +33,7 @@ class Config:
     redline_free_pct: float = 12         # free memory below this -> red line
     redline_swap_rise_gib: float | None = None
     redline_window_seconds: float = 60
-    redline_swap_free_pct: float = 100   # swap rule only applies below this free % (100 = always)
+    redline_swap_free_pct: float = 25    # swap rule applies when free % is below this, or when the task is over its own budget
     redline_swap_recent_seconds: float = 5  # ...and only if swap is still rising over the last few seconds
     kill_cooldown_seconds: float = 60    # after a kill, the swap rule stays quiet this long (no cascades)
     overrun_warn_ratio: float = 1.3      # exceeding your own budget by this factor only warns

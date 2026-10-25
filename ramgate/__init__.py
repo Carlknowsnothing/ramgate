@@ -41,7 +41,7 @@ class Lease:
             _lease.log(f"warning: {self.reg.record['name']} uses {fp:.1f} GiB, over {self.cfg.overrun_warn_ratio}x its {self.need:.0f} GiB budget")
         why = policy.redline(snap.free_pct, self.sampler.swap_rise(self.cfg.redline_window_seconds), self.cfg,
                              self.sampler.swap_rise(self.cfg.redline_swap_recent_seconds), self.sampler.critical_seconds(),
-                             state.seconds_since_kill())
+                             state.seconds_since_kill(), over_budget=bool(fp and fp > self.need * self.cfg.overrun_warn_ratio))
         if why and not self.killed_reason and _youngest(self.reg):
             self.killed_reason = why; state.note_kill()
             _lease.log(f"red line: {why}; this task registered last, terminating itself and its children (pid {os.getpid()})")

@@ -1,4 +1,5 @@
-# Built-in profiles. Each has a memory budget (GiB), environment variables injected when the caller
+# Built-in profiles. `match` substrings are launch patterns (venv paths, module names, entry points), never bare
+# product names: the hook also sees grep/echo/heredoc text, and "ComfyUI" in a log grep must not be refused. Each has a memory budget (GiB), environment variables injected when the caller
 # has not set them, `match` substrings the Claude Code hook uses to spot a direct model launch, and a note.
 # Add or override entries in ~/.config/ramgate/profiles.toml (`ramgate init` writes a template).
 # After a run, `ramgate history` records the sustained peak footprint; budgets use max(profile, 1.1 × recent peak).
@@ -6,20 +7,20 @@
 [ace-step]
 mem_gib = 28
 env = { ACE_SPLIT_LM = "1", ACE_MLX_CACHE_GIB = "2" }
-match = ["acestep", "ace-step", "ace_step"]
+match = ["bin/acestep", "import acestep", "-m acestep", "acestep.handler", "acestep.inference"]
 note = "ACE-Step 1.5 (MLX). XL + 4B planner: ~45 GiB sustained footprint on a 64 GiB M5 Pro; 2B ~21"
 
 [comfyui]
 mem_gib = 24
 resident = true
 env = { PYTORCH_MPS_HIGH_WATERMARK_RATIO = "1.0" }
-match = ["ComfyUI", "comfyui"]
+match = ["ComfyUI/main.py", "ComfyUI/.venv", "main.py --listen", "comfy/cli_args"]
 note = "ComfyUI server (PyTorch MPS); depends entirely on the workflow"
 
 [ltx]
 mem_gib = 20
 env = { PYTORCH_MPS_HIGH_WATERMARK_RATIO = "1.0" }
-match = ["ltx-2", "ltx_video", "ltxv", "ltx2"]
+match = ["ltx-2-mlx", "bin/ltx-2", "ltx_video", "ltxv", "-m ltx"]
 note = "LTX-2.x video: 18 GiB measured at 512x512x49 frames, q8, low-RAM mode"
 
 [mlx-lm]

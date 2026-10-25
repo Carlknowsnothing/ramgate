@@ -54,13 +54,15 @@ def test_redline_on_low_free_or_swap_surge():
 
 
 def test_swap_redline_needs_rising_swap_and_kernel_critical_needs_persistence():
-    assert policy.redline(free_pct=36, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5)  # free % does not matter by default
+    assert policy.redline(free_pct=36, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5) is None  # within budget, free still high: a server loading weights
+    assert policy.redline(free_pct=36, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5, over_budget=True)  # runaway
+    assert policy.redline(free_pct=20, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5)  # free already low
     assert policy.redline(free_pct=20, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.0) is None  # no longer rising
     assert policy.redline(free_pct=60, swap_rise_gib=0, cfg=CFG, critical_seconds=3)
     assert policy.redline(free_pct=60, swap_rise_gib=0, cfg=CFG, critical_seconds=1) is None  # a 1 s flash
 
 
 def test_swap_redline_cools_down_after_a_kill():
-    assert policy.redline(free_pct=40, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5, seconds_since_kill=3) is None
-    assert policy.redline(free_pct=40, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5, seconds_since_kill=61)
+    assert policy.redline(free_pct=20, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5, seconds_since_kill=3) is None
+    assert policy.redline(free_pct=20, swap_rise_gib=5, cfg=CFG, swap_rise_recent_gib=0.5, seconds_since_kill=61)
     assert policy.redline(free_pct=5, swap_rise_gib=0, cfg=CFG, seconds_since_kill=3)  # low free never waits for cooldown

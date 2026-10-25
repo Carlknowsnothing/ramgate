@@ -59,7 +59,8 @@ def main(argv):
         if fp and not warned[0] and fp > need * cfg.overrun_warn_ratio:
             warned[0] = True; log(f'warning: {name} uses {fp:.1f} GiB, over {cfg.overrun_warn_ratio}x its {need:.0f} GiB budget')
         why = policy.redline(snap.free_pct, sampler.swap_rise(cfg.redline_window_seconds), cfg,
-                             sampler.swap_rise(cfg.redline_swap_recent_seconds), sampler.critical_seconds(), state.seconds_since_kill())
+                             sampler.swap_rise(cfg.redline_swap_recent_seconds), sampler.critical_seconds(), state.seconds_since_kill(),
+                             over_budget=bool(fp and fp > need * cfg.overrun_warn_ratio))
         if why and youngest_is(reg):
             terminate(why)
     sampler.on_sample = on_sample
