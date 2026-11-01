@@ -42,6 +42,7 @@ class Config:
     sample_seconds: float = 1.0
     kill_grace_seconds: float = 10
     big_unregistered_gib: float | None = None
+    stop_cooldown_minutes: float = 30    # a command stopped from outside is refused this long (agents must ask first)
 
     def resolved(self, total_gib):
         """Fill size-dependent values from physical RAM; explicit values win."""

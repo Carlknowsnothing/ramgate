@@ -54,6 +54,10 @@ On macOS the swap line is the one that fires: the kernel keeps "free" healthy by
 
 **Environment injection.** Profiles carry variables that are set only when the caller has not: `PYTORCH_MPS_HIGH_WATERMARK_RATIO=1.0` for PyTorch/MPS tasks, cache limits for MLX, and so on.
 
+**Session binding.** `ramgate run` looks up its nearest ancestor named `claude` or `codex` (the agent session) and ends the task's process group when that session exits, so a render started with `nohup … &` does not outlive the conversation. Started by hand from a terminal, nothing is bound (closing the terminal sends SIGHUP, which is forwarded). `--resident` servers and `--detach` tasks are never bound; `RAMGATE_OWNER_PID` pins the owner (0 = none).
+
+**Stopped means stopped.** When a task is stopped from outside — `ramgate stop <id|name>`, a `kill` of ramgate or of the child, Ctrl-C — ramgate leaves a marker for that command line in that directory. For `stop_cooldown_minutes` (30) the same command is refused with exit 4 and a message telling the agent to ask the user instead of retrying; `--force` runs it anyway and clears the marker, `ramgate unblock` clears all. Red-line kills and session-end kills leave no marker. CPU is never limited: a render may use every core.
+
 ## Thresholds scale with RAM
 
 Unset values are fractions of physical memory with floors, so the defaults make sense from 16 to 128 GiB:
@@ -95,7 +99,7 @@ Two 10 GiB synthetic hogs submitted 2 s apart: the second queued until the first
 
 ## Non-goals
 
-No daemon or launchd service; no pausing or down-grading; never kills a process it did not start; no shell parsing in the hook; macOS only (it reads `kern.memorystatus_level`, `vm.swapusage` and `proc_pid_rusage`).
+No daemon or launchd service; no pausing, down-grading or CPU limits; never kills a process it did not start; no shell parsing in the hook; macOS only (it reads `kern.memorystatus_level`, `vm.swapusage` and `proc_pid_rusage`).
 
 ## Development
 

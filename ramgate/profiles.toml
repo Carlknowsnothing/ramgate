@@ -50,3 +50,8 @@ note = "For load tests; requires --mem"
 [adhoc]
 match = []
 note = "Escape hatch when the hook misfires; requires --mem"
+
+[blender]
+mem_gib = 8
+match = ["blender -b", "blender --background", "Blender -b", "Blender --background", "Blender.app/Contents/MacOS/Blender"]
+note = "Blender background renders (Cycles/EEVEE); a clay scene at 1080p held ~6 GiB. Uses every core, by design"

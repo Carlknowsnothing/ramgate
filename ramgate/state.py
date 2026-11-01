@@ -102,3 +102,44 @@ def note_kill():
 def seconds_since_kill():
     try: return time.time() - float((home() / 'last_kill').read_text())
     except (FileNotFoundError, ValueError): return float('inf')
+
+
+def _stopped_dir():
+    d = home() / 'stopped'; d.mkdir(parents=True, exist_ok=True); return d
+
+
+def _stop_key(cmd, cwd):
+    import hashlib
+    return hashlib.sha1(json.dumps([cwd, list(cmd)], ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def mark_stopped(cmd, cwd, reason):
+    """Someone outside ramgate stopped this command; agents must not simply start it again."""
+    path = _stopped_dir() / f'{_stop_key(cmd, cwd)}.json'
+    path.write_text(json.dumps({'cmd': list(cmd), 'cwd': cwd, 'at': time.time(), 'reason': reason}, ensure_ascii=False))
+
+
+def stopped_marker(cmd, cwd, cooldown_seconds=float('inf')):
+    """The marker for this command + directory if it is younger than the cooldown, else None (stale ones are removed)."""
+    path = _stopped_dir() / f'{_stop_key(cmd, cwd)}.json'
+    try: rec = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError): return None
+    if time.time() - rec['at'] < cooldown_seconds: return rec
+    with contextlib.suppress(FileNotFoundError): path.unlink()
+    return None
+
+
+def stopped_markers():
+    out = []
+    for path in sorted(_stopped_dir().glob('*.json')):
+        with contextlib.suppress(FileNotFoundError, json.JSONDecodeError): out.append({**json.loads(path.read_text()), 'path': path})
+    return out
+
+
+def clear_stopped(cmd=None, cwd=None):
+    """Remove one marker (cmd + cwd) or all of them; returns how many were removed."""
+    paths = [_stopped_dir() / f'{_stop_key(cmd, cwd)}.json'] if cmd else list(_stopped_dir().glob('*.json'))
+    n = 0
+    for p in paths:
+        with contextlib.suppress(FileNotFoundError): p.unlink(); n += 1
+    return n

@@ -40,3 +40,9 @@ def test_user_profiles_are_matched_before_builtins(home):
 def test_check_ignores_commands_that_merely_mention_a_model(builtins_only):
     assert rg('check', 'grep -n "ComfyUI\\|acestep\\|ltx-2.5" work/comfy.log | tail').returncode == 0
     assert rg('check', 'ls models/ltx-2.5-q8').returncode == 0
+
+
+def test_check_catches_background_blender_render(builtins_only):
+    assert rg('check', 'blender -b -P anim.py -- out/frames 100 all 48').returncode == 2
+    assert rg('check', '/Applications/Blender.app/Contents/MacOS/Blender -b -P scene.py').returncode == 2
+    assert rg('check', 'ramgate run --profile blender -- blender -b -P anim.py').returncode == 0

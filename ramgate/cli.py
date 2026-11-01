@@ -1,12 +1,16 @@
-"""ramgate command line: run / status / history / profiles / check / init / install-hook."""
-import json, shutil, sys, time
+"""ramgate command line: run / stop / unblock / status / history / profiles / check / init / install-hook."""
+import json, os, shutil, signal, sys, time
 from pathlib import Path
 from . import state, sysmem
 from .config import AUTO, Config, load_profiles, user_dir
 
 USAGE = """ramgate — one gate for every local model on a shared-memory Mac
 
-  ramgate run --profile <name> [--mem GiB] [--name label] [--resident] [--no-wait|--timeout s] -- <command...>
+  ramgate run --profile <name> [--mem GiB] [--name label] [--resident|--detach] [--force] [--no-wait|--timeout s] -- <command...>
+                              ends with the agent session that started it unless --resident/--detach;
+                              exit 4 = the user stopped this command recently: do not retry, ask first
+  ramgate stop <id|name>      stop a running task; the same command is then refused for a while
+  ramgate unblock             clear all stop markers
   ramgate status              registered tasks, machine watermarks, remaining budget, unregistered big processes
   ramgate history [-n 20]     recent runs with measured peaks
   ramgate profiles            built-in + user profiles
@@ -32,9 +36,34 @@ def status():
         when = time.strftime('%m-%d %H:%M', time.localtime(t['started']))
         print(f"  {when}  {t['name']}  profile {t['profile']}  budget {t['mem_gib']:.0f}  footprint {fp:.1f} GiB  pid {t.get('child_pid') or t['pid']}"
               f"{'  resident' if t.get('resident') else ''}" if fp is not None else f"  {t['name']} (process gone)")
+    cooldown = cfg.stop_cooldown_minutes * 60
+    marks = [m for m in state.stopped_markers() if time.time() - m['at'] < cooldown]
+    if marks:
+        print('stopped recently, refused until the cooldown ends (`ramgate unblock` clears):')
+        for m in marks:
+            print(f"  {time.strftime('%m-%d %H:%M', time.localtime(m['at']))}  {' '.join(m['cmd'])[:80]}  in {m['cwd']}  ({m['reason']})")
     if big:
         print('unregistered processes holding memory (listed only, never touched):')
         for pid, gib, cmd in big: print(f'  pid {pid}  {gib:.1f} GiB  {cmd[:90]}')
+    return 0
+
+
+def stop(args):
+    if not args: print('usage: ramgate stop <id|name>', file=sys.stderr); return 2
+    current = state.tasks()
+    hits = [t for t in current if t['id'] == args[0]] or [t for t in current if args[0] in t['name']]
+    if len(hits) != 1:
+        print(f"{'no task matches' if not hits else 'several tasks match'} {args[0]!r}; running: "
+              + (', '.join(f"{t['id']} {t['name']}" for t in current) or 'none'), file=sys.stderr)
+        return 2
+    t = hits[0]
+    os.kill(t['pid'], signal.SIGTERM)  # its ramgate forwards to the child group and leaves the stop marker
+    print(f"stopping {t['name']} (pid {t['pid']})")
+    return 0
+
+
+def unblock():
+    print(f'removed {state.clear_stopped()} stop marker(s)')
     return 0
 
 
@@ -105,6 +134,8 @@ def main(argv=None):
     sub, rest = argv[0], argv[1:]
     if sub == 'run':
         from .run import main as run; return run(rest)
+    if sub == 'stop': return stop(rest)
+    if sub == 'unblock': return unblock()
     if sub == 'status': return status()
     if sub == 'history': return history(int(rest[rest.index('-n') + 1]) if '-n' in rest else 20)
     if sub == 'profiles': return profiles()

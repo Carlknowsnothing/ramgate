@@ -1,5 +1,5 @@
 import sys, time
-from conftest import rg, rg_bg
+from conftest import PROJECT, rg, rg_bg
 
 from ramgate import state
 
@@ -58,3 +58,86 @@ def test_resident_flag_recorded(home):
     time.sleep(0.5)
     assert state.tasks()[0]['resident'] is True
     a.wait()
+
+
+def _alive(pid):
+    import os
+    try: os.kill(pid, 0); return True
+    except ProcessLookupError: return False
+
+
+def _child_pid(timeout=3):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        current = state.tasks()
+        if current and current[0].get('child_pid'): return current[0]['child_pid']
+        time.sleep(0.05)
+    raise AssertionError('task never registered a child')
+
+
+def test_task_ends_when_owner_session_exits(home):
+    import subprocess
+    owner = subprocess.Popen(['sleep', '30'])
+    a = rg_bg('run', '--profile', 'hog', '--mem', '0.1', '--name', 'bound', '--', 'sleep', '30', env={'RAMGATE_OWNER_PID': str(owner.pid)})
+    child = _child_pid()
+    owner.kill(); owner.wait()
+    a.wait(timeout=5)
+    time.sleep(0.2)
+    assert not _alive(child)
+    assert 'owner' in a.stderr.read()
+    (h,) = state.history()
+    assert h['reason'] == 'owner session ended'
+    assert not state.stopped_marker(['sleep', '30'], str(PROJECT))  # the owner is gone; nobody to block
+
+
+def test_detach_and_resident_survive_owner_exit(home):
+    import subprocess
+    for flag in ('--detach', '--resident'):
+        owner = subprocess.Popen(['sleep', '30'])
+        a = rg_bg('run', '--profile', 'hog', '--mem', '0.1', flag, '--', 'sleep', '1.5', env={'RAMGATE_OWNER_PID': str(owner.pid)})
+        _child_pid(); owner.kill(); owner.wait()
+        assert a.wait(timeout=5) == 0, flag
+
+
+def test_externally_stopped_task_is_not_rerun(home):
+    cmd = ('run', '--profile', 'hog', '--mem', '0.1', '--', 'sleep', '30')
+    a = rg_bg(*cmd)
+    _child_pid()
+    a.terminate(); a.wait(timeout=5)
+    r = rg(*cmd, timeout=5)
+    assert r.returncode == 4 and 'do not retry' in r.stderr
+    assert rg('run', '--profile', 'hog', '--mem', '0.1', '--', 'sleep', '0.1').returncode == 0  # other commands unaffected
+    assert rg('run', '--profile', 'hog', '--mem', '0.1', '--force', '--', 'sleep', '0.1').returncode == 0
+
+
+def test_killing_the_child_directly_also_blocks_rerun(home):
+    import os, signal
+    cmd = ('run', '--profile', 'hog', '--mem', '0.1', '--', 'sleep', '30')
+    a = rg_bg(*cmd)
+    os.kill(_child_pid(), signal.SIGKILL); a.wait(timeout=5)
+    assert rg(*cmd, timeout=5).returncode == 4
+
+
+def test_force_clears_marker_and_cooldown_expires(home):
+    # Same command text each time; $D only shortens the forced rerun.
+    cmd = ('run', '--profile', 'hog', '--mem', '0.1', '--', 'sh', '-c', 'sleep ${D:-30}')
+    a = rg_bg(*cmd); _child_pid(); a.terminate(); a.wait(timeout=5)
+    assert rg(*cmd, timeout=5).returncode == 4
+    assert rg(*cmd[:5], '--force', *cmd[5:], env={'D': '0.1'}, timeout=5).returncode == 0
+    assert rg(*cmd, env={'D': '0.1'}, timeout=5).returncode == 0  # --force removed the marker
+    (home / 'config' / 'config.toml').write_text((home / 'config' / 'config.toml').read_text() + 'stop_cooldown_minutes = 0\n')
+    a = rg_bg(*cmd); _child_pid(); a.terminate(); a.wait(timeout=5)
+    assert rg(*cmd, env={'D': '0.1'}, timeout=5).returncode == 0  # cooldown 0: admitted again
+
+
+def test_stop_and_unblock_commands(home):
+    a = rg_bg('run', '--profile', 'hog', '--mem', '0.1', '--name', 'render-frames', '--', 'sleep', '30')
+    _child_pid()
+    r = rg('stop', 'render')
+    assert r.returncode == 0 and 'render-frames' in r.stdout
+    a.wait(timeout=5)
+    assert rg('run', '--profile', 'hog', '--mem', '0.1', '--', 'sleep', '30', timeout=5).returncode == 4
+    assert 'sleep 30' in rg('status').stdout
+    assert rg('unblock').returncode == 0
+    assert rg('run', '--profile', 'hog', '--mem', '0.1', '--no-wait', '--', 'sleep', '0.1').returncode == 0
+    assert rg('stop', 'nothing-like-this').returncode == 2
