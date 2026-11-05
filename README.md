@@ -58,6 +58,10 @@ On macOS the swap line is the one that fires: the kernel keeps "free" healthy by
 
 **Stopped means stopped.** When a task is stopped from outside — `ramgate stop <id|name>`, a `kill` of ramgate or of the child, Ctrl-C — ramgate leaves a marker for that command line in that directory. For `stop_cooldown_minutes` (30) the same command is refused with exit 4 and a message telling the agent to ask the user instead of retrying; `--force` runs it anyway and clears the marker, `ramgate unblock` clears all. Red-line kills and session-end kills leave no marker. CPU is never limited: a render may use every core.
 
+**Coverage without a list.** The hook blocks profile `match` patterns *and* any program started from a venv that has torch, mlx or onnxruntime installed (it follows `cd` and `source …/activate`; only the executable position of each `;`/`&&`/`|` segment counts, so `ls .venv/bin/python` passes). A new tool is covered before anyone writes a profile for it.
+
+**Patrol.** `ramgate install-patrol` runs `ramgate patrol` under launchd. Every 2 s it looks at processes an agent session (`claude`, `codex`) started that are unregistered and hold ≥ `big_unregistered_gib`, and ends one (children first, SIGKILL after the grace period, plus a macOS notification and a line in `~/.local/state/ramgate/patrol.log`) when its session has ended, or when a red line is crossed and it is the youngest such process and younger than every registered task. Ownership is remembered from the first sighting, so a process whose shell already exited still belongs to its session. Apps you start yourself have no agent ancestor and are never touched; `ramgate status` shows whether the patrol is alive.
+
 ## Thresholds scale with RAM
 
 Unset values are fractions of physical memory with floors, so the defaults make sense from 16 to 128 GiB:
@@ -99,7 +103,7 @@ Two 10 GiB synthetic hogs submitted 2 s apart: the second queued until the first
 
 ## Non-goals
 
-No daemon or launchd service; no pausing, down-grading or CPU limits; never kills a process it did not start; no shell parsing in the hook; macOS only (it reads `kern.memorystatus_level`, `vm.swapusage` and `proc_pid_rusage`).
+Admission needs no daemon (the patrol is a safety net, not a scheduler); no pausing, down-grading or CPU limits; never kills a process that neither it nor an agent session started; no shell parsing in the hook; macOS only (it reads `kern.memorystatus_level`, `vm.swapusage` and `proc_pid_rusage`).
 
 ## Development
 

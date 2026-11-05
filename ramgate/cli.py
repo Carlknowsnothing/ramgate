@@ -1,5 +1,5 @@
-"""ramgate command line: run / stop / unblock / status / history / profiles / check / init / install-hook."""
-import json, os, shutil, signal, sys, time
+"""ramgate command line: run / stop / unblock / status / history / profiles / check / patrol / init / install-hook / install-patrol."""
+import json, os, shutil, signal, subprocess, sys, time
 from pathlib import Path
 from . import state, sysmem
 from .config import AUTO, Config, load_profiles, user_dir
@@ -16,7 +16,12 @@ USAGE = """ramgate — one gate for every local model on a shared-memory Mac
   ramgate profiles            built-in + user profiles
   ramgate check '<command>'   exit 2 when the command launches a model without ramgate (Claude Code hook)
   ramgate init                write ~/.config/ramgate/{config,profiles}.toml templates
-  ramgate install-hook claude [--remove]   add (or remove) the PreToolUse hook in ~/.claude/settings.json"""
+  ramgate install-hook claude [--remove]   add (or remove) the PreToolUse hook in ~/.claude/settings.json
+  ramgate patrol              safety net, normally under launchd: ends big unregistered processes an agent session started,
+                              when that session has ended or a memory red line is crossed (never touches apps you started)
+  ramgate install-patrol [--remove]        run patrol as a launchd agent (starts at login, restarts if it dies)"""
+
+PATROL_LABEL = 'io.ramgate.patrol'
 
 PRESSURE = {1: 'normal', 2: 'warning', 4: 'critical'}
 
@@ -30,6 +35,11 @@ def status():
     print(f'machine {snap.total_gib:.0f} GiB, free {snap.free_gib:.0f} GiB ({snap.free_pct:.0f}%), swap used {snap.swap_used_gib:.1f} GiB, '
           f'kernel pressure {PRESSURE.get(snap.pressure_level, snap.pressure_level)}')
     print(f'budget: allocatable {pool:.0f}, registered {used:.0f}, unregistered big processes {strangers:.0f}, remaining {pool - used - strangers:.0f} GiB')
+    try: beat = json.loads((state.home() / 'patrol.json').read_text())
+    except (FileNotFoundError, json.JSONDecodeError): beat = None
+    if beat and time.time() - beat['at'] < 3 * cfg.patrol_seconds + 5:
+        print(f"patrol: running (pid {beat['pid']}), watching {beat['watching']} big agent-started process(es)")
+    else: print('patrol: not running (`ramgate install-patrol` sets it up)')
     if not current: print('registered tasks: none')
     for t in current:
         fp = sysmem.tree_footprint_gib(t.get('child_pid') or t['pid'])
@@ -128,6 +138,33 @@ def install_hook(args):
     return 0
 
 
+def install_patrol(args):
+    plist = Path(f'~/Library/LaunchAgents/{PATROL_LABEL}.plist').expanduser()
+    domain = f'gui/{os.getuid()}'
+    subprocess.run(['/bin/launchctl', 'bootout', f'{domain}/{PATROL_LABEL}'], capture_output=True)
+    if '--remove' in args:
+        plist.unlink(missing_ok=True); print(f'removed {plist}'); return 0
+    exe = shutil.which('ramgate') or sys.argv[0]
+    logf = state.home() / 'patrol.log'; state.home().mkdir(parents=True, exist_ok=True)
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    plist.write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{PATROL_LABEL}</string>
+  <key>ProgramArguments</key><array><string>{exe}</string><string>patrol</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{logf}</string>
+  <key>StandardErrorPath</key><string>{logf}</string>
+</dict></plist>
+''')
+    r = subprocess.run(['/bin/launchctl', 'bootstrap', domain, str(plist)], capture_output=True, text=True)
+    if r.returncode: print(f'launchctl bootstrap failed: {r.stderr.strip()}', file=sys.stderr); return 1
+    print(f'installed {plist}; log: {logf}')
+    return 0
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ('-h', '--help'): print(USAGE); return 0
@@ -141,6 +178,9 @@ def main(argv=None):
     if sub == 'profiles': return profiles()
     if sub == 'check':
         from .check import main as check; return check(rest)
+    if sub == 'patrol':
+        from .patrol import main as patrol; return patrol(rest)
+    if sub == 'install-patrol': return install_patrol(rest)
     if sub == 'init': return init()
     if sub == 'install-hook': return install_hook(rest)
     print(USAGE, file=sys.stderr); return 2

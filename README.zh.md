@@ -10,6 +10,7 @@ ramgate run --profile comfyui --resident -- python main.py --listen …    # 常
 ramgate run --profile adhoc --mem 8 -- …                                  # 没有档案的临时任务
 ramgate stop <id|名字>   # 停掉一个任务；之后同一条命令冷却期内被拒
 ramgate unblock     # 清掉所有停止标记
+ramgate install-patrol   # 装 launchd 巡查进程（开机自启，挂了自动拉起）；--remove 卸载
 ramgate status      # 谁在占内存、预算余量、未登记的大进程、停止标记
 ramgate history     # 近期任务实测峰值
 ramgate profiles    # 内置＋用户档案
@@ -32,6 +33,8 @@ lease = ramgate.acquire('ace-2b', name='r5')   # 对象要一直留着；进程�
 - 红线：内核压力“严重”持续 3 秒，或整机空闲 < 12%，或 60 秒内 swap 涨 > 4 GiB 且还在涨（杀过一个后冷却 60 秒）→ **最晚登记的任务**终止自己的子进程（SIGTERM，10 秒后 SIGKILL，退出码 137）。先起的任务和常驻服务不受连累；不是 ramgate 启动的进程只在 status 里点名。
 - 超出自己预算 1.3 倍只告警。
 - 会话绑定：`ramgate run` 往上找最近的 `claude` / `codex` 祖先进程（agent 会话），会话退出就结束任务的整个进程组，`nohup … &` 起的渲染也不会比对话活得久。终端里手动起的不绑定（关终端有 SIGHUP 转发）。`--resident`、`--detach` 不绑定；`RAMGATE_OWNER_PID` 可指定（0 = 不绑）。
+- 不靠名单：hook 除了档案的 match，还拦任何从装了 torch/mlx/onnxruntime 的 venv 起的程序（会跟踪 `cd` 和 `source …/activate`，只看每段命令的可执行位置，`ls .venv/bin/python` 不拦）。新工具不用先写档案。
+- 巡查兜底：launchd 里的 `ramgate patrol` 每 2 秒看一次由 `claude`/`codex` 会话启动、没登记、≥ 4 GiB 的进程，两种情况结束它（先子后父，宽限期后 SIGKILL，发系统通知，写 `~/.local/state/ramgate/patrol.log`）：启动它的会话已结束；或越过红线，且它是这类进程里最晚的、也比所有已登记任务晚。归属在第一次看到时就记下，壳先退出了也认得。自己打开的 App 没有 agent 祖先，永远不碰。
 - 停了就别重拉：任务被外部停掉（`ramgate stop`、kill ramgate 或子进程、Ctrl-C）后，按「命令＋目录」留停止标记，30 分钟内（`stop_cooldown_minutes`）同一条命令退出码 4 被拒，提示 agent 先问人。`--force` 照跑并清标记，`ramgate unblock` 全清。红线和会话结束造成的终止不留标记。不限 CPU，渲染可以用满所有核。
 - macOS 靠把别的进程换出去维持“空闲”好看，所以 swap 增速才是主要信号；进程 footprint（含 Metal 分配和压缩页）比 MLX 在用峰值高一截（XL 渲染 45 vs 26.5）。
 

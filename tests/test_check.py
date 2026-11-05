@@ -46,3 +46,43 @@ def test_check_catches_background_blender_render(builtins_only):
     assert rg('check', 'blender -b -P anim.py -- out/frames 100 all 48').returncode == 2
     assert rg('check', '/Applications/Blender.app/Contents/MacOS/Blender -b -P scene.py').returncode == 2
     assert rg('check', 'ramgate run --profile blender -- blender -b -P anim.py').returncode == 0
+
+
+def _venv(root, *pkgs):
+    (root / 'bin').mkdir(parents=True); (root / 'pyvenv.cfg').write_text('home = /usr/bin\n')
+    site = root / 'lib' / 'python3.12' / 'site-packages'; site.mkdir(parents=True)
+    for p in pkgs: (site / p).mkdir()
+    return root
+
+
+def test_ml_venv_detected_by_its_packages(builtins_only, tmp_path):
+    from ramgate.check import ml_venv
+    v = _venv(tmp_path / 'tool' / '.venv', 'torch')
+    plain = _venv(tmp_path / 'plain' / '.venv', 'requests')
+    assert ml_venv(f'{v}/bin/python embed.py a.mp4', '/') == v
+    assert ml_venv(f'nohup {v}/bin/python embed.py > log 2>&1 &', '/') == v
+    assert ml_venv(f'FOO=1 BAR=2 {v}/bin/python x.py', '/') == v
+    assert ml_venv(f'cd {tmp_path}/tool && .venv/bin/python x.py', '/') == v
+    assert ml_venv('.venv/bin/python x.py', str(tmp_path / 'tool')) == v
+    assert ml_venv(f'source {v}/bin/activate && python run.py', '/') == v
+    assert ml_venv(f'echo hi; {v}/bin/some-cli generate', '/') == v
+    for ok in (f'ls -la {v}/bin/python', f'cat {v}/pyvenv.cfg', f'{v}/bin/python -m pip install x', f'{v}/bin/python --version',
+               f'{plain}/bin/python x.py', f'source {v}/bin/activate && pip list', 'python3 x.py', f'grep -r torch {v}'):
+        assert ml_venv(ok, '/') is None, ok
+
+
+def test_ml_venv_with_mlx_or_onnx(builtins_only, tmp_path):
+    from ramgate.check import ml_venv
+    assert ml_venv(f'{_venv(tmp_path / "a", "mlx")}/bin/python x.py', '/')
+    assert ml_venv(f'{_venv(tmp_path / "b", "onnxruntime")}/bin/python x.py', '/')
+
+
+def test_hook_blocks_unknown_ml_venv_and_suggests_adhoc(builtins_only, tmp_path):
+    v = _venv(tmp_path / 'videoseal' / '.venv', 'torch')
+    payload = json.dumps({'tool_input': {'command': f'{v}/bin/python scripts/video_watermark.py embed a b'}, 'cwd': str(tmp_path)})
+    r = rg('check', '--hook', input=payload)
+    assert r.returncode == 2 and 'ramgate run --profile adhoc --mem' in r.stderr and 'torch' in r.stderr
+    payload = json.dumps({'tool_input': {'command': '.venv/bin/python go.py'}, 'cwd': str(tmp_path / 'videoseal')})
+    assert rg('check', '--hook', input=payload).returncode == 2
+    wrapped = json.dumps({'tool_input': {'command': f'ramgate run --profile adhoc --mem 30 -- {v}/bin/python go.py'}, 'cwd': '/'})
+    assert rg('check', '--hook', input=wrapped).returncode == 0
